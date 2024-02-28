@@ -1,0 +1,63 @@
+---
+title: "Homework"
+author: "Aabha Latkar"
+date: "2024-02-23"
+output: html_document
+---
+
+##Importing data and loading libraries
+```{r}
+library(readr)
+library(boot)
+data <- read_csv("nhanes_bmi.csv", show_col_types = FALSE)
+```
+
+##Question 1
+```{r}
+#split data
+results_list <- list()
+set.seed(500)
+calculate_means <- function(data, indices) {
+nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
+nuisance <- data[nuisance_indices, ]
+effect <- data[-nuisance_indices, ]
+
+#model to estimates the probability of treatment assignment for each individual in the dataset
+ps_mod <- glm(School_meal ~ .-BMI, family = binomial(link = logit), data = nuisance)
+
+prop_score <- predict(ps_mod, effect, type = "response")
+
+eqn1 <- mean((effect$School_meal/prop_score-1)*effect$age)
+eqn2 <- mean((effect$School_meal/prop_score-1)*effect$ChildSex)
+eqn3 <- mean((effect$School_meal/prop_score-1)*effect$black)
+eqn4 <- mean((effect$School_meal/prop_score-1)*effect$mexam)
+eqn5 <- mean((effect$School_meal/prop_score-1)*effect$pir200_plus)
+eqn6 <- mean((effect$School_meal/prop_score-1)*effect$WIC)
+eqn7 <- mean((effect$School_meal/prop_score-1)*effect$Food_Stamp)
+eqn8 <- mean((effect$School_meal/prop_score-1)*effect$fsdchbi)
+eqn9 <- mean((effect$School_meal/prop_score-1)*effect$RefAge)
+eqn10 <- mean((effect$School_meal/prop_score-1)*effect$RefSex)
+
+m <- c(eqn1,eqn2, eqn3, eqn4, eqn5, eqn6, eqn7, eqn8, eqn9, eqn10)
+
+return(m)
+}
+
+boot_results <- boot(data = data, statistic = calculate_means, R = 1000)
+
+conf_intervals <- boot.ci(boot_results,conf = 0.95, type = "basic")
+conf_intervals
+
+```
+
+```{r}
+#(b) Estimate the causal effect of A on Y and obtain bootstrap standard errors for OR
+#estimator, IPW estimator, Hajek estimator, and DR estimator.
+
+
+```
+
+
+
+
+

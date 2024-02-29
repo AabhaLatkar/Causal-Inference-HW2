@@ -285,11 +285,7 @@ cat(sprintf("Causal effect estimate (ATC) with imputed data: %.4f\n", imputed_ef
 
 n1 <- sum(data$School_meal == 1)
 n0 <- sum(data$School_meal == 0)
-h<- nrow(data)
-p <- n1/h
-q<- n0/h
 
-ATE<- p(ATT)+ q(ACT)
 ```
 
 

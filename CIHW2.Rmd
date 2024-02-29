@@ -126,7 +126,7 @@ formula <- as.formula(School_meal ~ .-BMI,)
 m.out <- matchit(formula=formula,
                  data=data,
                  method= "nearest",
-                 ratio = 6,
+                 ratio = 3,
                  distance='mahalanobis')
 
 site_df_matched <- get_matches(m.out,data=data)
@@ -140,6 +140,10 @@ avg_comparisons(fit,
                 weights = "weights")
 
 ```
+```{r}
+
+```
+
 
 
 

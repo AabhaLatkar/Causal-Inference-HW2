@@ -15,53 +15,14 @@ data <- read_csv("nhanes_bmi.csv", show_col_types = FALSE)
 ```
 
 ##Question 1
+
 ```{r}
-#split data
-results_list <- list()
-set.seed(500)
-calculate_means <- function(data, indices) {
 nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
-nuisance <- data[nuisance_indices, ]
-effect <- data[-nuisance_indices, ]
-
-#model to estimates the probability of treatment assignment for each individual in the dataset
-ps_mod <- glm(School_meal ~ .-BMI, family = binomial(link = logit), data = nuisance)
-
-prop_score <- predict(ps_mod, effect, type = "response")
-
-eqn1 <- mean((effect$School_meal/prop_score-1)*effect$age)
-eqn2 <- mean((effect$School_meal/prop_score-1)*effect$ChildSex)
-eqn3 <- mean((effect$School_meal/prop_score-1)*effect$black)
-eqn4 <- mean((effect$School_meal/prop_score-1)*effect$mexam)
-eqn5 <- mean((effect$School_meal/prop_score-1)*effect$pir200_plus)
-eqn6 <- mean((effect$School_meal/prop_score-1)*effect$WIC)
-eqn7 <- mean((effect$School_meal/prop_score-1)*effect$Food_Stamp)
-eqn8 <- mean((effect$School_meal/prop_score-1)*effect$fsdchbi)
-eqn9 <- mean((effect$School_meal/prop_score-1)*effect$RefAge)
-eqn10 <- mean((effect$School_meal/prop_score-1)*effect$RefSex)
-
-results <- c(
-    eqn1 = eqn1,
-    eqn2 = eqn2,
-    eqn3 = eqn3,
-    eqn4 = eqn4,
-    eqn5 = eqn5,
-    eqn6 = eqn6,
-    eqn7 = eqn7,
-    eqn8 = eqn8,
-    eqn9 = eqn9,
-    eqn10 = eqn10
-  )
-
-return(results)
-}
-
-boot_results <- boot(data = data, statistic = calculate_means_1, R = 1000)
-boot.ci(data, conf = 0.95, type = "basic")
-
-```
-```{r}
-
+  nuisance <- data[nuisance_indices, ]
+  effect <- data[-nuisance_indices, ]
+ps_model <- glm(School_meal ~ . - BMI, data = nuisance, family = binomial())
+  nuisance$Pscore <- predict(ps_model, newdata = effect, type = "response")
+  
 # Initialize results list
 results_list <- list()
 
@@ -77,7 +38,7 @@ calculate_means <- function(data, indices) {
   # Model to estimate the probability of treatment assignment for each individual
   ps_mod <- glm(School_meal ~ .-BMI, family = binomial(link = logit), data = nuisance)
 
-  prop_score <- predict(ps_mod, effect, type = "response")
+ prop_score <- predict(ps_mod, effect, type = "response")
 
   # Calculate means for each equation
   eqn1 <- mean((effect$School_meal / prop_score - 1) * effect$age)
@@ -112,37 +73,227 @@ results_list
 ```
 
 
+
 ```{r}
-#(b) Estimate the causal effect of A on Y and obtain bootstrap standard errors for OR
-#estimator, IPW estimator, Hajek estimator, and DR estimator.
+#OR estimator
+bootstrap_function <- function(data, indices) {
+  boot_sample <- data[indices, ]
 
+  n <- nrow(boot_sample)
+  sample_indices <- sample(nrow(boot_sample), size = floor(nrow(boot_sample)/2))
+ 
+  train_df <- boot_sample[sample_indices,]
+  test_df <- boot_sample[-sample_indices,]
 
+  ps_model <- glm(School_meal ~ . - BMI, data = train_df, family = binomial())
+  test_df$Pscore <- predict(ps_model, newdata = test_df, type = "response")
+ 
+  or_model_1 <- lm(BMI ~ . - School_meal, data = train_df[train_df$School_meal == 1, ])
+  or_model_0 <- lm(BMI ~ . - School_meal, data = train_df[train_df$School_meal == 0, ])
+ 
+  test_df$mu_1 <- predict(or_model_1, newdata = test_df)
+  test_df$mu_0 <- predict(or_model_0, newdata = test_df)
+ 
+  ate_estimate <- mean(test_df$mu_1 - test_df$mu_0)
+ 
+  return(ate_estimate)
+}
+
+boot_results <- boot(data = data, statistic = bootstrap_function, R = 1000)
+
+boot_se <- sd(boot_results$t)
+print(boot_se)
+
+```
+```{r}
+bootstrap_function_dr <- function(data, indices) {
+  boot_sample <- data[indices, ]
+  sample_indices <- sample(nrow(boot_sample), size = floor(nrow(boot_sample)/2))
+ 
+  train_df <- boot_sample[sample_indices,]
+  test_df <- boot_sample[-sample_indices,]
+ 
+  ps_model <- glm(School_meal ~ . - BMI, data = train_df, family = binomial())
+  test_df$Pscore <- predict(ps_model, newdata = test_df, type = "response")
+ 
+  or_model_1 <- lm(BMI ~ . - School_meal, data = train_df[train_df$School_meal == 1, ])
+  or_model_0 <- lm(BMI ~ . - School_meal, data = train_df[train_df$School_meal == 0, ])
+  test_df$mu_1 <- predict(or_model_1, newdata = test_df)
+  test_df$mu_0 <- predict(or_model_0, newdata = test_df)
+ 
+  dr_estimate <- mean(
+    (test_df$School_meal * (test_df$BMI - test_df$mu_1)) / test_df$Pscore +
+    ((1 - test_df$School_meal) * (test_df$BMI - test_df$mu_0)) / (1 - test_df$Pscore) +
+    test_df$mu_1 - test_df$mu_0
+  )
+ 
+  return(dr_estimate)
+}
+
+# Assuming 'data' is the original data, replace it with your actual data
+boot_results_dr <- boot(data = data, statistic = bootstrap_function_dr, R = 1000)
+
+boot_se_dr <- sd(boot_results_dr$t)
+print(boot_se_dr)
+
+```
+```{r, WARNING= FALSE}
+set.seed(592)
+#IPW estimator
+bootstrap_function_ipw <- function(data, indices) {
+  boot_sample <- data[indices, ]
+  sample_indices <- sample(nrow(boot_sample), size = floor(nrow(boot_sample)/2))
+
+  nuisance <- boot_sample[sample_indices,]
+  effect <- boot_sample[-sample_indices,]
+
+  ps_model <- glm(School_meal ~ . - BMI, data = nuisance, family = binomial())
+  effect$Pscore <- predict(ps_model, newdata = effect, type = "response")
+
+  h_1 <- mean((effect$School_meal)/(effect$Pscore)*(effect$BMI))
+  h_2 <- mean((1-effect$School_meal)/ (1-(effect$Pscore)*(effect$BMI)))
+ 
+  ipw_estimate <- h_1-h_2
+
+  return(ipw_estimate)
+}
+
+boot_results_ipw <- boot(data = data, statistic = bootstrap_function_ipw, R = 1000)
+
+boot_se_ipw <- sd(boot_results_ipw$t)
+print(boot_se_ipw)
 ```
 
 ```{r}
-#(d) Evaluate the causal effect using matching estimator (using Mahalanobis distance)
-#for M ∈ {3, 6, 10}
-formula <- as.formula(School_meal ~ .-BMI,)
-m.out <- matchit(formula=formula,
-                 data=data,
-                 method= "nearest",
-                 ratio = 3,
-                 distance='mahalanobis')
+# Assuming 'effect' is your data frame with columns for School_meal, BMI, and prop_score
+nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
+  nuisance <- data[nuisance_indices, ]
+  effect <- data[-nuisance_indices, ]
+ ps_mod <- glm(School_meal ~ .-BMI, family = binomial(link = logit), data = nuisance)
 
-site_df_matched <- get_matches(m.out,data=data)
+ prop_score <- predict(ps_mod, effect, type = "response")
+effect$prop_score <- predict(ps_mod, effect, type = "response")
+# Function to calculate Hajek estimate
+calculate_hajek <- function(effect) {
+  i_1 <- mean((effect$School_meal / effect$prop_score) / (mean(effect$School_meal / effect$prop_score)) * effect$BMI)
+  i_2 <- mean(((1 - effect$School_meal) / (1 - effect$prop_score)) / (mean((1 - effect$School_meal) / (1 - effect$prop_score))) * effect$BMI)
+  return(i_1 - i_2)
+}
 
-fit <- lm(BMI ~ School_meal * (age + ChildSex + black), data = site_df_matched)
+# Bootstrap for Hajek
+n_bootstrap <- 1000
+bootstrap_results_hajek <- numeric(n_bootstrap)
 
-avg_comparisons(fit,
-                variables = "School_meal",
-                vcov = ~subclass,
-                newdata = subset(site_df_matched, School_meal == 1),
-                weights = "weights")
+for (i in 1:n_bootstrap) {
+  bootstrap_sample <- effect[sample(nrow(effect), replace = TRUE), ]
+  bootstrap_hajek <- calculate_hajek(bootstrap_sample)
+  bootstrap_results_hajek[i] <- bootstrap_hajek
+}
+
+# Calculate standard errors
+bootstrap_se_hajek <- sd(bootstrap_results_hajek)
+cat("Bootstrap Standard Error for Hajek:", bootstrap_se_hajek, "\n")
 
 ```
 ```{r}
+#c)
+set.seed(592)
+dfc <- data
+train_cut_c <- sample(nrow(dfc), size = floor(nrow(dfc)/2))
+train_dfc <- dfc[train_cut_c, ]
+test_dfc <- dfc[-train_cut_c, ]
 
+ps_model <- glm(School_meal ~ . - BMI, data = train_dfc, family = binomial(link = "logit"))
+test_dfc$Pscore <- predict(ps_model, newdata = test_dfc, type = "response")
+
+or_model_1 <- lm(BMI ~ . - School_meal, data = train_dfc[train_dfc$School_meal == 1, ])
+or_model_0 <- lm(BMI ~ . - School_meal, data = train_dfc[train_dfc$School_meal == 0, ])
+test_dfc$mu_1 <- predict(or_model_1, newdata = test_dfc)
+test_dfc$mu_0 <- predict(or_model_0, newdata = test_dfc)
+
+
+psi_values <- with(test_dfc,
+  (School_meal * BMI) / Pscore -
+  ((School_meal - Pscore) / Pscore) * mu_1 -
+  ((1 - School_meal) * BMI) / (1 - Pscore) +
+  ((Pscore - School_meal) / (1 - Pscore)) * mu_0
+)
+
+dr_ate_estimate <- mean(psi_values)
+
+n <- nrow(test_dfc)
+
+asymptotic_variance <- sum((psi_values - dr_ate_estimate) ^ 2) / (n^2)
+asymptotic_variance
 ```
+
+```{r}
+
+# Specify the formula
+formula <- as.formula(School_meal ~ age)
+
+# Estimate ATT
+matching10.att <- matchit(School_meal ~ age, ratio = 10, distance = "mahalanobis", estimand = "ATT", data = data, replace = TRUE)
+match.att <- match.data(matching10.att)
+matrix.att <- matching10.att$match.matrix
+rows <- nrow(matrix.att)
+
+# Initialize imputation data frame
+imputation <- data.frame(treat_imputed = rep(NA, nrow(data)), ctrl_imputed = rep(NA, nrow(data)))
+
+# Impute treated units
+imputation$treat_imputed <- data$BMI * (data$School_meal == 1)
+
+# Impute control units
+for (i in 1:rows) {
+  r <- as.numeric(rownames(matrix.att)[i])
+  y <- data[r, ]$BMI
+  yj <- data[as.numeric(matrix.att[i, ]), ]$BMI
+  imputation$ctrl_imputed[r] <- ifelse(is.na(imputation$ctrl_imputed[r]), mean(yj), imputation$ctrl_imputed[r])
+}
+
+# Estimate ATE using imputed data
+ATT <- mean(imputation$treat_imputed - imputation$ctrl_imputed, na.rm = TRUE)
+
+cat(sprintf("Causal effect estimate (ATT) with imputed data: %.4f\n", imputed_effect))
+
+
+# Estimate ATC
+matching10.atc <- matchit(formula, ratio = 10, distance = "mahalanobis", estimand = "ATC", data = data, replace = TRUE)
+match.atc <- match.data(matching10.atc)
+matrix.atc <- matching10.atc$match.matrix
+rows <- nrow(matrix.atc)
+
+# Initialize imputation data frame
+imputation <- data.frame(treat_imputed = rep(NA, nrow(data)), ctrl_imputed = rep(NA, nrow(data)))
+
+# Impute treated units
+imputation$treat_imputed <- data$BMI * (data$School_meal == 1)
+
+# Impute control units
+for (i in 1:rows) {
+  r <- as.numeric(rownames(matrix.atc)[i])
+  y <- data[r, ]$BMI
+  yj <- data[as.numeric(matrix.atc[i, ]), ]$BMI
+  imputation$ctrl_imputed[r] <- ifelse(is.na(imputation$ctrl_imputed[r]), mean(yj), imputation$ctrl_imputed[r])
+}
+
+# Estimate ATE using imputed data
+ACT <- mean(imputation$treat_imputed - imputation$ctrl_imputed, na.rm = TRUE)
+
+cat(sprintf("Causal effect estimate (ATC) with imputed data: %.4f\n", imputed_effect_atc))
+
+n1 <- sum(data$School_meal == 1)
+n0 <- sum(data$School_meal == 0)
+h<- nrow(data)
+p <- n1/h
+q<- n0/h
+
+ATE<- p(ATT)+ q(ACT)
+```
+
+
+
 
 
 

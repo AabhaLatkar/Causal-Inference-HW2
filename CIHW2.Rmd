@@ -38,17 +38,77 @@ eqn8 <- mean((effect$School_meal/prop_score-1)*effect$fsdchbi)
 eqn9 <- mean((effect$School_meal/prop_score-1)*effect$RefAge)
 eqn10 <- mean((effect$School_meal/prop_score-1)*effect$RefSex)
 
-m <- c(eqn1,eqn2, eqn3, eqn4, eqn5, eqn6, eqn7, eqn8, eqn9, eqn10)
+results <- c(
+    eqn1 = eqn1,
+    eqn2 = eqn2,
+    eqn3 = eqn3,
+    eqn4 = eqn4,
+    eqn5 = eqn5,
+    eqn6 = eqn6,
+    eqn7 = eqn7,
+    eqn8 = eqn8,
+    eqn9 = eqn9,
+    eqn10 = eqn10
+  )
 
-return(m)
+return(results)
 }
 
-boot_results <- boot(data = data, statistic = calculate_means, R = 1000)
-
-conf_intervals <- boot.ci(boot_results,conf = 0.95, type = "basic")
-conf_intervals
+boot_results <- boot(data = data, statistic = calculate_means_1, R = 1000)
+boot.ci(data, conf = 0.95, type = "basic")
 
 ```
+```{r}
+
+# Initialize results list
+results_list <- list()
+
+# Set seed for reproducibility
+set.seed(500)
+
+# Function to calculate means
+calculate_means <- function(data, indices) {
+  nuisance_indices <- sample(nrow(data), size = nrow(data) / 2)
+  nuisance <- data[nuisance_indices, ]
+  effect <- data[-nuisance_indices, ]
+
+  # Model to estimate the probability of treatment assignment for each individual
+  ps_mod <- glm(School_meal ~ .-BMI, family = binomial(link = logit), data = nuisance)
+
+  prop_score <- predict(ps_mod, effect, type = "response")
+
+  # Calculate means for each equation
+  eqn1 <- mean((effect$School_meal / prop_score - 1) * effect$age)
+  eqn2 <- mean((effect$School_meal / prop_score - 1) * effect$ChildSex)
+  eqn3 <- mean((effect$School_meal / prop_score - 1) * effect$black)
+  eqn4 <- mean((effect$School_meal / prop_score - 1) * effect$mexam)
+  eqn5 <- mean((effect$School_meal / prop_score - 1) * effect$pir200_plus)
+  eqn6 <- mean((effect$School_meal / prop_score - 1) * effect$WIC)
+  eqn7 <- mean((effect$School_meal / prop_score - 1) * effect$Food_Stamp)
+  eqn8 <- mean((effect$School_meal / prop_score - 1) * effect$fsdchbi)
+  eqn9 <- mean((effect$School_meal / prop_score - 1) * effect$RefAge)
+  eqn10 <- mean((effect$School_meal / prop_score - 1) * effect$RefSex)
+
+  results <- c(eqn1, eqn2, eqn3, eqn4, eqn5, eqn6, eqn7, eqn8, eqn9, eqn10)
+
+  return(results)
+}
+
+# Perform bootstrap
+boot_results <- boot(data = data, statistic = calculate_means, R = 1000)
+
+# Get 95% confidence intervals for each equation
+conf_intervals_list <- lapply(1:10, function(i) {
+  boot_ci <- boot.ci(boot_results, conf=0.95, index = i, type = "basic")
+})
+
+# Combine results into a list
+results_list$conf_intervals <- conf_intervals_list
+
+# Print the results
+results_list
+```
+
 
 ```{r}
 #(b) Estimate the causal effect of A on Y and obtain bootstrap standard errors for OR

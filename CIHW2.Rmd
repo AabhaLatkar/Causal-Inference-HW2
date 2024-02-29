@@ -9,6 +9,8 @@ output: html_document
 ```{r}
 library(readr)
 library(boot)
+library(MatchIt)
+library("marginaleffects")
 data <- read_csv("nhanes_bmi.csv", show_col_types = FALSE)
 ```
 
@@ -116,6 +118,29 @@ results_list
 
 
 ```
+
+```{r}
+#(d) Evaluate the causal effect using matching estimator (using Mahalanobis distance)
+#for M ∈ {3, 6, 10}
+formula <- as.formula(School_meal ~ .-BMI,)
+m.out <- matchit(formula=formula,
+                 data=data,
+                 method= "nearest",
+                 ratio = 6,
+                 distance='mahalanobis')
+
+site_df_matched <- get_matches(m.out,data=data)
+
+fit <- lm(BMI ~ School_meal * (age + ChildSex + black), data = site_df_matched)
+
+avg_comparisons(fit,
+                variables = "School_meal",
+                vcov = ~subclass,
+                newdata = subset(site_df_matched, School_meal == 1),
+                weights = "weights")
+
+```
+
 
 
 
